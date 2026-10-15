@@ -203,6 +203,8 @@
   let mcp = null;
   let syncing = false;
   let cloudDoc = null;
+  let ccDoc = null; // Claude Code snapshot that Claude saves into this artifact's storage
+  const canImport = () => !!(mcp || ccDoc);
   let saveTimer = null;
 
   const projOf = (id) => S.projects.find((p) => p.id === id) || { id, name: 'No project', color: 'gray' };
@@ -586,7 +588,7 @@
     validateFocus();
     view.innerHTML = tab === 'today' ? viewToday() : viewSummary();
     $('navTitle').textContent = tab === 'today' ? 'Today' : 'Summary';
-    $('syncBtn').hidden = !mcp || !S.projects.some((p) => p.source === 'claude');
+    $('syncBtn').hidden = !canImport() || !S.projects.some((p) => p.source === 'claude');
     $('syncBtn').classList.toggle('spin', syncing);
     document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'));
     document.title = tab === 'today' ? 'Daybook · Today' : 'Daybook · Summary';
@@ -701,13 +703,13 @@
   function setColor(c) { pForm.querySelectorAll('.swatch').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.color === c))); }
   const getColor = () => (pForm.querySelector('.swatch[aria-checked="true"]') || {}).dataset?.color || 'blue';
   function updateImportNote() {
-    const note = !mcp
+    const note = !canImport()
       ? 'Open Daybook in Claude to import your repos as projects and your sessions as tasks.'
       : S.lastSync
         ? `Last synced ${new Date(S.lastSync).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}. Sync again to pick up new sessions.`
         : 'Import your repos as projects and your sessions as tasks.';
     $('pImportNote').textContent = note;
-    $('pImportBtn').hidden = !mcp;
+    $('pImportBtn').hidden = !canImport();
     $('pImportBtn').textContent = syncing ? 'Importing…' : S.lastSync ? 'Sync' : 'Import';
     $('pImportBtn').disabled = syncing;
   }
@@ -772,6 +774,7 @@
     return Object.keys(CC_STATUS).find((k) => b.includes(k)) || null;
   }
   function sessionRepo(s) {
+    if (s.repo) return s.repo;
     const c = s.session_context || {};
     const out = (c.outcomes || []).find((x) => x && x.git_repository && x.git_repository.git_info && x.git_repository.git_info.repo);
     if (out) return out.git_repository.git_info.repo;
@@ -780,9 +783,13 @@
     return m ? m[1] : null;
   }
   function ccErrorText(e) {
-    switch (e && e.code) {
+    if (!e) return 'No Claude Code data yet. Ask Claude in a Claude Code session to update your Daybook snapshot, then tap Import.';
+    return `${ccErrorReason(e)} (${e.code || 'unknown'})`;
+  }
+  function ccErrorReason(e) {
+    switch (e.code) {
       case 'server_not_connected':
-      case 'server_not_found': return 'Add the Claude Code Remote connector in claude.ai Settings → Connectors, then try again.';
+      case 'server_not_found': return "The Claude Code connector isn't available in your account, and there's no saved snapshot yet. Ask Claude in a Claude Code session to update your Daybook snapshot.";
       case 'needs_reauth': return 'Reconnect Claude Code Remote in claude.ai Settings → Connectors, then try again.';
       case 'approval_required':
       case 'consent_required':
@@ -799,60 +806,81 @@
     }
   }
 
-  async function importClaude(quiet) {
-    if (!mcp || syncing) return;
-    syncing = true; render(); updateImportNote();
-    try {
-      const [r, s] = await Promise.all([
-        mcp.callTool(CC_SERVER, 'list_repos', { limit: 200 }),
-        mcp.callTool(CC_SERVER, 'list_sessions', { limit: 100 }),
-      ]);
-      const rp = r.payload || {}, sp = s.payload || {};
-      const repos = Array.isArray(rp.repos) ? rp.repos : [];
-      const sessions = (sp.ccr && Array.isArray(sp.ccr.data) && sp.ccr.data) || (Array.isArray(sp.data) && sp.data) || (Array.isArray(sp.sessions) && sp.sessions) || [];
-      let newProjects = 0, newTasks = 0, finished = 0;
-      const ensureProject = (repo) => {
-        const id = repo ? `cc:${repo}` : 'cc:_general';
-        let p = S.projects.find((x) => x.id === id);
-        if (!p) {
-          const used = new Set(S.projects.map((x) => x.color));
-          p = { id, name: repo ? repo.split('/').pop() : 'Claude Code', color: COLORS.find((c) => !used.has(c)) || COLORS[S.projects.length % COLORS.length], source: 'claude', repo: repo || null };
-          S.projects.push(p); newProjects++;
-        }
-        return p;
-      };
-      repos.forEach((x) => { if (x && x.full_name) ensureProject(x.full_name); });
-      sessions.forEach((x) => {
-        if (!x || !x.id) return;
-        const id = `cc:${x.id}`;
-        if (S.ccIgnored.includes(id)) return;
-        const bucket = ccBucket(x);
-        const t = S.tasks.find((y) => y.id === id);
-        if (t) {
-          if (x.title) t.title = x.title;
-          t.cc = bucket;
-          if (bucket === 'completed' && !t.done) { t.done = true; t.doneAt = nowMin(); finished++; }
-          return;
-        }
-        if (bucket === 'completed') return; // already finished before it reached Daybook
-        const p = ensureProject(sessionRepo(x));
-        S.tasks.push({ id, title: x.title || 'Untitled session', project: p.id, pri: '', due: null, est: 0, done: false, doneAt: null, carried: false, cc: bucket, sessionUrl: `https://claude.ai/code/${encodeURIComponent(x.id)}` });
-        newTasks++;
-      });
-      S.lastSync = Date.now();
-      save();
-      if (!quiet || newProjects || newTasks || finished) {
-        const parts = [];
-        if (newProjects) parts.push(plural(newProjects, 'project'));
-        if (newTasks) parts.push(plural(newTasks, 'session'));
-        toast(parts.length ? `Imported ${parts.join(' and ')} from Claude Code` : finished ? `${plural(finished, 'session')} finished in Claude Code` : 'Claude Code projects are up to date');
+  function applyClaudeData(repos, sessions, quiet, snapshotAt) {
+    let newProjects = 0, newTasks = 0, finished = 0;
+    const ensureProject = (repo) => {
+      const id = repo ? `cc:${repo}` : 'cc:_general';
+      let p = S.projects.find((x) => x.id === id);
+      if (!p) {
+        const used = new Set(S.projects.map((x) => x.color));
+        p = { id, name: repo ? repo.split('/').pop() : 'Claude Code', color: COLORS.find((c) => !used.has(c)) || COLORS[S.projects.length % COLORS.length], source: 'claude', repo: repo || null };
+        S.projects.push(p); newProjects++;
       }
-      if (!psheet.hidden && !editingProject) closeProjectSheet();
-    } catch (e) {
-      if (!quiet) toast(ccErrorText(e), null, 7000);
+      return p;
+    };
+    repos.forEach((x) => { if (x && x.full_name) ensureProject(x.full_name); });
+    sessions.forEach((x) => {
+      if (!x || !x.id) return;
+      const id = `cc:${x.id}`;
+      if (S.ccIgnored.includes(id)) return;
+      const bucket = ccBucket(x);
+      const t = S.tasks.find((y) => y.id === id);
+      if (t) {
+        if (x.title) t.title = x.title;
+        t.cc = bucket;
+        if (bucket === 'completed' && !t.done) { t.done = true; t.doneAt = nowMin(); finished++; }
+        return;
+      }
+      if (bucket === 'completed') return; // already finished before it reached Daybook
+      const p = ensureProject(sessionRepo(x));
+      S.tasks.push({ id, title: x.title || 'Untitled session', project: p.id, pri: '', due: null, est: 0, done: false, doneAt: null, carried: false, cc: bucket, sessionUrl: `https://claude.ai/code/${encodeURIComponent(x.id)}` });
+      newTasks++;
+    });
+    S.lastSync = Date.now();
+    save();
+    if (!quiet || newProjects || newTasks || finished) {
+      const parts = [];
+      if (newProjects) parts.push(plural(newProjects, 'project'));
+      if (newTasks) parts.push(plural(newTasks, 'session'));
+      const from = snapshotAt ? `Claude Code (saved ${new Date(snapshotAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })})` : 'Claude Code';
+      toast(parts.length ? `Imported ${parts.join(' and ')} from ${from}` : finished ? `${plural(finished, 'session')} finished in Claude Code` : `Up to date with ${from}`, null, 5000);
+    }
+    if (!psheet.hidden && !editingProject) closeProjectSheet();
+  }
+
+  async function readSnapshot() {
+    if (!ccDoc) return null;
+    const snap = await ccDoc.get();
+    const d = snap.exists ? snap.data() : null;
+    return d && (Array.isArray(d.repos) || Array.isArray(d.sessions)) ? d : null;
+  }
+
+  // Live connector first; if that fails, the snapshot Claude saved for you.
+  async function importClaude(quiet) {
+    if (!canImport() || syncing) return;
+    syncing = true; render(); updateImportNote();
+    let err = null;
+    try {
+      if (mcp) {
+        try {
+          const [r, s] = await Promise.all([
+            mcp.callTool(CC_SERVER, 'list_repos', { limit: 200 }),
+            mcp.callTool(CC_SERVER, 'list_sessions', { limit: 100 }),
+          ]);
+          const rp = r.payload || {}, sp = s.payload || {};
+          const repos = Array.isArray(rp.repos) ? rp.repos : [];
+          const sessions = (sp.ccr && Array.isArray(sp.ccr.data) && sp.ccr.data) || (Array.isArray(sp.data) && sp.data) || (Array.isArray(sp.sessions) && sp.sessions) || [];
+          applyClaudeData(repos, sessions, quiet, null);
+          return;
+        } catch (e) { err = e; }
+      }
+      const d = await readSnapshot().catch(() => null);
+      if (d) { applyClaudeData(d.repos || [], d.sessions || [], quiet, d.updatedAt || null); return; }
+      if (!quiet) toast(ccErrorText(err), null, 9000);
     } finally {
       syncing = false;
-      if (sheetsClosed()) render(); else { render(); updateImportNote(); }
+      render();
+      if (!psheet.hidden) updateImportNote();
     }
   }
 
@@ -945,6 +973,7 @@
   async function connectCloud() {
     try {
       const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      if (db) { ccDoc = db.doc('claude/code'); if (!psheet.hidden) updateImportNote(); }
       if (!db || !user) return;
       const me = await user.id();
       if (!me) return;
@@ -978,11 +1007,11 @@
     if (!mcp) return;
     if (sheetsClosed()) render();
     if (!psheet.hidden) updateImportNote();
-    if (S.lastSync) importClaude(true); // refresh quietly once you've imported before
   }
 
   if (window.claude && typeof window.claude.use === 'function') {
-    connectCloud();
-    connectClaudeCode();
+    Promise.all([connectCloud(), connectClaudeCode()]).then(() => {
+      if (S.lastSync) importClaude(true); // refresh quietly once you've imported before
+    });
   }
 })();
