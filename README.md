@@ -31,6 +31,8 @@ When Daybook is opened as a claude.ai artifact, **New Project → Import** reads
 - Each open session becomes a task in its repo's project, labelled with its status (Working, Needs input, Ready for review, Failed) and linked to the session.
 - The sync button in the top bar refreshes them. Sessions that finish in Claude Code are ticked off, and sessions you delete in Daybook are not re-imported.
 
+If the *Claude Code Remote* connector isn't available in your account, Import falls back to a snapshot of your repos and sessions stored in the artifact at `claude/code` (`{updatedAt, repos: [{full_name}], sessions: [{id, title, status_bucket, repo}]}`). Ask Claude in any Claude Code session to "update my Daybook snapshot" to refresh it. Import errors show their error code.
+
 Opened inside Claude, your data is also saved to your private space in the artifact, so it follows you across devices. Opened as a plain file, it uses the browser's `localStorage` and the import is hidden.
 
 ## How it works
