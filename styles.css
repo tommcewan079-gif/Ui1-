@@ -17,6 +17,11 @@
   --red: #FF3B30;
   --purple: #AF52DE;
   --teal: #30B0C7;
+  --yellow: #E5A800;
+  --indigo: #5856D6;
+  --pink: #FF2D55;
+  --brown: #A2845E;
+  --gray: #8E8E93;
   --on-color: #FFFFFF;
 
   /* Activity rings sit on black in both themes, like the Fitness widget */
@@ -54,6 +59,11 @@
     --red: #FF453A;
     --purple: #BF5AF2;
     --teal: #40C8E0;
+    --yellow: #FFD60A;
+    --indigo: #5E5CE6;
+    --pink: #FF375F;
+    --brown: #AC8E68;
+    --gray: #98989D;
     --ring-bg: #1C1C1E;
     color-scheme: dark;
   }
@@ -75,6 +85,11 @@
   --red: #FF453A;
   --purple: #BF5AF2;
   --teal: #40C8E0;
+  --yellow: #FFD60A;
+  --indigo: #5E5CE6;
+  --pink: #FF375F;
+  --brown: #AC8E68;
+  --gray: #98989D;
   --ring-bg: #1C1C1E;
   color-scheme: dark;
 }
@@ -216,6 +231,62 @@ button { cursor: pointer; }
 .pill-btn.danger { color: var(--red); }
 .link-btn { border: 0; background: none; color: var(--blue); padding: 6px 0; font-size: 17px; }
 .link-btn.strong { font-weight: 600; }
+
+/* Project switcher */
+.pbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; min-width: 0; }
+.pbar-scroll {
+  display: flex; gap: 8px;
+  overflow-x: auto; min-width: 0; flex: 1;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  padding: 2px;
+  margin: -2px;
+}
+.pbar-scroll::-webkit-scrollbar { display: none; }
+.pchip {
+  flex: none;
+  scroll-snap-align: start;
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  font-size: 15px; font-weight: 600;
+  white-space: nowrap;
+}
+.pchip i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.pchip b { font-weight: 600; color: var(--label-2); font-variant-numeric: tabular-nums; font-size: 14px; }
+.pchip em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--label-2); background: var(--fill); border-radius: 5px; padding: 1px 5px; }
+.pchip[aria-pressed="true"] { background: var(--c); color: var(--on-color); }
+.pchip[aria-pressed="true"] i { background: var(--on-color); }
+.pchip[aria-pressed="true"] b, .pchip[aria-pressed="true"] em { color: inherit; opacity: 0.85; }
+.pchip[aria-pressed="true"] em { background: rgba(255, 255, 255, 0.22); }
+.pchip.all[aria-pressed="true"] { background: var(--label); color: var(--bg); }
+.pchip.add { color: var(--blue); background: var(--fill); box-shadow: none; }
+.pchip.add svg { width: 15px; height: 15px; }
+.pchip.edit { padding: 8px 10px; color: var(--blue); margin-left: -4px; }
+.pchip.edit svg { width: 18px; height: 18px; }
+
+/* One task list per project */
+.plists { display: grid; gap: 14px; }
+.plist-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 0.5px solid var(--sep);
+}
+.plist-head button {
+  border: 0; background: none; padding: 2px 0;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-size: 17px; font-weight: 700;
+  color: var(--c);
+  min-width: 0;
+}
+.plist-head button span { overflow-wrap: anywhere; text-align: left; }
+.plist-head i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.plist-head b { font-size: 15px; font-weight: 600; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.task-meta .status { color: var(--c); font-weight: 600; }
 
 /* Activity rings */
 .rings-card {
@@ -372,8 +443,10 @@ button { cursor: pointer; }
 .done-row .t { font-size: 16px; overflow-wrap: anywhere; }
 .done-row .m { font-size: 13px; color: var(--label-2); }
 
-.lists { display: grid; gap: 12px; }
-.lrow { display: grid; gap: 6px; }
+.lists { display: grid; gap: 4px; }
+.lrow { display: grid; gap: 6px; border: 0; background: none; padding: 6px 8px; margin: 0 -8px; border-radius: 10px; text-align: left; width: calc(100% + 16px); }
+.lrow:hover { background: var(--fill); }
+.lrow.on { background: color-mix(in srgb, var(--c) 12%, transparent); }
 .lrow .top { display: flex; justify-content: space-between; gap: 10px; font-size: 15px; }
 .lrow .top b { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .lrow .top b::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
@@ -478,6 +551,27 @@ button { cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--card); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12); font-weight: 600; }
 .field .seg { width: 210px; max-width: 60%; }
 .delete-btn { border: 0; background: var(--card); color: var(--red); border-radius: var(--r-group); min-height: 46px; font-size: 17px; }
+
+/* Project sheet */
+.swatch-group { padding: 14px; }
+.swatches { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; justify-items: center; }
+.swatch {
+  width: 40px; height: 40px; max-width: 100%;
+  border-radius: 50%;
+  border: 0;
+  background: var(--c);
+  box-shadow: 0 0 0 0 var(--card), 0 0 0 0 var(--c);
+  transition: box-shadow 0.15s;
+}
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--card), 0 0 0 5.5px var(--c); }
+.import-group { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.import-text { display: grid; gap: 2px; flex: 1; min-width: 0; font-size: 14px; color: var(--label-2); }
+.import-text b { font-size: 16px; color: var(--label); font-weight: 600; }
+.pill-btn:disabled { opacity: 0.6; }
+.link-field { color: var(--blue); text-decoration: none; }
+.link-field span { color: var(--label-3); font-size: 22px; }
+.icon-btn.spin svg { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Toast */
 .toast {
